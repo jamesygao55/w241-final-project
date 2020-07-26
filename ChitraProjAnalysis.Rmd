@@ -35,7 +35,7 @@ setnames(dt, "Post-treatment Score", "post_treatment_score")
 setnames(dt, "Treatment", "treatment")
 setnames(dt, "Email", "email")
 
-dt[3 : 9]
+dt[, 3 : 9]
 ```
 
 ## Data Cleanup
@@ -61,7 +61,7 @@ d[age == 'Older than 55 years' & treatment == 1, .N]/d[age == 'Older than 55 yea
 
 ``` {r}
 # Eliminate all rows where pre_treatment score is 0 as these rows are not usable for data analysis
-d <- new_d[pre_treatment_score != 0, ]
+d <- d[pre_treatment_score != 0, ]
 d[, .N]
 ```
 
@@ -108,14 +108,14 @@ Treatment has positive effect on pre treatment score but the p-value is not stat
 
 ### Basic Model
 
-```{r scoreImprovement, warning = FALSE}
+```{r scoreImprovement1, warning = FALSE}
 m1 <- reg(d[, lm(score_improved ~ treatment)], title = 'Basic Model:  score improvement ~ treatment')
 stargazer(m1$model, type='text')
 ```
 
 ### Using baseline scores as covariate
 
-```{r scoreImprovement, warning = FALSE}
+```{r scoreImprovement2, warning = FALSE}
 m1 <- reg(d[, lm(score_improved ~ treatment + pre_treatment_score)], title = 'Basic Model: Score improvement ~ treatment + pre_treatment_score')
 stargazer(m1$model, type='text')
 ```
