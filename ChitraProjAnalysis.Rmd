@@ -1,0 +1,234 @@
+---
+title: "Chitra_Project_Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r import}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+library(lmtest)
+library(sandwich)
+library(foreign)
+library(knitr)
+```
+
+## Load Data
+
+You can also embed plots, for example:
+
+```{r loadData}
+dt <- fread("data_as_of_july_25.csv")
+
+setnames(dt, "Timestamp", "timestamp")
+setnames(dt, "Name", "name")
+setnames(dt, "Gender", "gender")
+setnames(dt, "Age", "age")
+setnames(dt, "Music Training", "music_training")
+setnames(dt, "Pre-treatment Score", "pre_treatment_score")
+setnames(dt, "Post-treatment Score", "post_treatment_score")
+setnames(dt, "Treatment", "treatment")
+setnames(dt, "Email", "email")
+
+dt[3 : 9]
+```
+
+## Data Cleanup
+
+1. Remove duplicate data
+
+``` {r}
+cat('Total number of rows: ', dt[,.N], '\n')
+duplicate_data <- sum(duplicated(dt, by=c('name', 'gender', 'age', 'music_training','pre_treatment_score', 'Time of Day', 'post_treatment_score', 'treatment', 'email' )))
+cat('Number of duplicated rows: ', duplicate_data, '\n')
+
+d <- unique(dt, by = c('name', 'gender', 'age', 'music_training','pre_treatment_score', 'Time of Day', 'post_treatment_score', 'treatment', 'email' ))
+cat('Number of unique rows in dataset: ', d[,.N], '\n')
+d <- d[, 3:9]
+
+# Randomization Check - percentage of dataset in treatment
+d[age == '5 - 21 years' & treatment == 1, .N]/d[age == '5 - 21 years', .N]
+d[age == '22 - 55 years' & treatment == 1, .N]/d[age == '22 - 55 years', .N]
+d[age == 'Older than 55 years' & treatment == 1, .N]/d[age == 'Older than 55 years' , .N]
+```
+
+2. Remove any rows that are incomplete with data. E.g some rows dont have pre treatment or post treatment score because user made an error in data entry
+
+``` {r}
+# Eliminate all rows where pre_treatment score is 0 as these rows are not usable for data analysis
+d <- new_d[pre_treatment_score != 0, ]
+d[, .N]
+```
+
+3. Add additional derived columns to help analysis
+
+```{r}
+d[ , score_difference := post_treatment_score - pre_treatment_score]
+d[, score_improved := ifelse (score_difference >= 0, 1, 0)]
+```
+
+```{r HelperMethods}
+reg <- function (model, title = '', ptest = TRUE) {
+  test <- coeftest(model, vcovHC(model))
+  if(ptest) {
+    print(test)
+    stargazer(test[,], title = title, type='text')
+  }
+  return (list('model' = model, 'test' = test))
+}
+```
+
+## Randomization Check
+
+```{r}
+# Check the number for whose score_diff is >= 0
+cat('People in treatment for whom score increased or stayed same: ', d[treatment == 1 & score_difference >= 0, .N], '\n')
+cat('People in treatment for whom score decreased: ', d[treatment == 1 & score_difference < 0, .N] , '\n')
+cat('People in control for whom score increased increased or stayed same: ', d[treatment == 0 & score_difference >= 0, .N] , '\n')
+cat('People in control for whom score decreased: ', d[treatment == 0 & score_difference < 0, .N], '\n')
+```
+
+## Initial Analysis
+
+### Placebo test 
+
+Check if the treatment has an effect on the pre treatment score. Treatment should not have any impact on it.
+```{r}
+m0 <- reg(d[,lm(pre_treatment_score ~ treatment)], title = 'Placebo test Estimates of pre treatment score')
+```
+
+Treatment has positive effect on pre treatment score but the p-value is not statistically significant which indicates that placebo test passes
+ 
+## Using Score Improvement as Outcome Variable
+
+### Basic Model
+
+```{r scoreImprovement, warning = FALSE}
+m1 <- reg(d[, lm(score_improved ~ treatment)], title = 'Basic Model:  score improvement ~ treatment')
+stargazer(m1$model, type='text')
+```
+
+### Using baseline scores as covariate
+
+```{r scoreImprovement, warning = FALSE}
+m1 <- reg(d[, lm(score_improved ~ treatment + pre_treatment_score)], title = 'Basic Model: Score improvement ~ treatment + pre_treatment_score')
+stargazer(m1$model, type='text')
+```
+
+## Using post_treatment_score as Outcome Variable
+
+```{r warning=FALSE}
+# using only treatment
+
+m11 <- reg(d[, lm(post_treatment_score ~ treatment)], title = 'Basic Model with Post Treatment Score')
+ate = d[treatment == 1, mean(post_treatment_score)] - d[treatment == 0, mean(post_treatment_score)]
+cat('ATE: ', ate, '\n')
+
+hist(
+  d[,pre_treatment_score],
+  col = 'black',
+  xlab = 'Pre treatment Score',
+  xlim = c(0, 12),
+  main = 'Distribution of pre-treatment score',
+)
+abline(v = d[treatment == 1, mean(pre_treatment_score)], col = 'blue', lwd = 3)
+abline(v = d[treatment == 0, mean(pre_treatment_score)], col = 'red', lwd = 3)
+
+hist(
+  d[,post_treatment_score],
+  col = 'black',
+  xlab = 'Post Treatment Score',
+  xlim = c(0, 12),
+  main = 'Distribution of post-treatment score',
+)
+abline(v = d[treatment == 1, mean(post_treatment_score)], col = 'blue', lwd = 3)
+abline(v = d[treatment == 0, mean(post_treatment_score)], col = 'red', lwd = 3)
+
+hist(
+  d[,score_difference],
+  col = 'black',
+  xlab = 'Score Difference',
+  xlim = c(0, 12),
+  main = 'Distribution of score difference',
+)
+abline(v = d[treatment == 1, mean(score_difference)], col = 'blue', lwd = 3)
+abline(v = d[treatment == 0, mean(score_difference)], col = 'red', lwd = 3)
+
+#m1 <- reg(d[age == '5 - 21 years',lm(post_treatment_score ~ treatment)], ptest = FALSE)
+#m2 <- reg(d[age == '22 - 55 years',lm(post_treatment_score ~ treatment)], ptest = FALSE)
+#m3 <- reg(d[age == 'Older than 55 years',lm(post_treatment_score ~ treatment)], ptest = FALSE)
+# stargazer( m1$model, m2$model, m3$model,
+#  type = 'text',
+#  title = 'Simple Treatment Effect of receiving a treatment',
+#  se = list(sqrt(diag(vcovHC(m1$model))), sqrt(diag(vcovHC(m2$model))), sqrt(diag(vcovHC(m3$model)))),
+#  add.lines = list(c("Age Group:", "5 - 21 years", "22 - 55 years", "Older than 55 years")))
+
+m1 <- reg(d[, lm(post_treatment_score ~ treatment)], title = 'Basic Model with Post Treatment Score')
+stargazer( m1$model, 
+ type = 'text',
+ title = 'Simple Treatment Effect of receiving a treatment',
+ se = list(sqrt(diag(vcovHC(m1$model)))))
+
+```
+
+### Basic Model 2 - Pretreament score + treatment
+
+```{r warning=FALSE}
+m0 <- reg(d[,lm(post_treatment_score ~  treatment + pre_treatment_score)], ptest = FALSE)
+stargazer( m0$model,
+  type = 'text',
+  title = 'Treatment Effect of receiving a treatment with pre treatment score',
+  se = list(sqrt(diag(vcovHC(m0$model))))
+)
+
+# m1 <- reg(d[age == '5 - 21 years',lm(post_treatment_score ~ treatment + pre_treatment_score)], ptest = FALSE)
+# m2 <- reg(d[age == '22 - 55 years',lm(post_treatment_score ~ treatment + pre_treatment_score)], ptest = FALSE)
+# m3 <- reg(d[age == 'Older than 55 years',lm(post_treatment_score ~ treatment + pre_treatment_score)], ptest = FALSE)
+# stargazer( m1$model, m2$model, m3$model,
+#   type = 'text',
+#   title = 'Treatment Effect of receiving a treatment with pre treatment score',
+#   se = list(sqrt(diag(vcovHC(m1$model))), sqrt(diag(vcovHC(m2$model))), sqrt(diag(vcovHC(m3$model)))),
+#   add.lines = list(c("Age Group:", "5 - 21 years", "22 - 55 years", "Older than 55 years")))
+```
+
+### Block average as covariate
+
+```{r warning=FALSE}
+d[, avg_block_turnout := mean(post_treatment_score), by=age]
+head(d)
+
+# below gives highly significant results for the pre-treatment scores
+m0 <- reg(d[,lm(post_treatment_score ~  treatment + avg_block_turnout)], ptest = TRUE) 
+stargazer( m0$model,
+  type = 'text',
+  title = 'Treatment Effect of receiving a treatment with pre treatment score',
+  se = list(sqrt(diag(vcovHC(m0$model))))
+)
+
+# m0 <- reg(d[,lm(score_difference ~  treatment + pre_treatment_score + avg_block_turnout)], ptest = TRUE)
+# m1 <- reg(d[age == '5 - 21 years',lm(score_difference ~ treatment + pre_treatment_score + avg_block_turnout)], ptest = FALSE)
+# m2 <- reg(d[age == '22 - 55 years',lm(score_difference ~ treatment + pre_treatment_score + avg_block_turnout)], ptest = FALSE)
+# m3 <- reg(d[age == 'Older than 55 years',lm(score_difference ~ treatment + pre_treatment_score  + avg_block_turnout)], ptest = FALSE)
+# stargazer( m1$model, m2$model, m3$model,
+#   type = 'text',
+#   title = 'Treatment Effect of receiving a treatment with block fixed effects',
+#   se = list(sqrt(diag(vcovHC(m1$model))), sqrt(diag(vcovHC(m2$model))), sqrt(diag(vcovHC(m3$model)))),
+#   add.lines = list(c("Age Group:", "5 - 21 years", "22 - 55 years", "Older than 55 years")))
+
+```
+```{r warning=FALSE}
+unique(d[,music_training])
+d[,music := ifelse(music_training == 'more than 5 years of training', 1, 0)]
+m3 <- reg(d[,lm(post_treatment_score ~  treatment + avg_block_turnout + music + treatment * music )])
+stargazer( m3$model,
+  type = 'text',
+  title = 'Treatment Effect of receiving a treatment with pre treatment score',
+  se = list(sqrt(diag(vcovHC(m3$model))))
+)
+```
+
