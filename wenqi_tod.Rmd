@@ -1,0 +1,100 @@
+---
+title: "wenqi_tod"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r include = FALSE, echo = FALSE} 
+
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(stargazer)
+library(lmtest)
+library(sandwich)
+library(foreign)
+library(knitr)
+
+
+
+d <- fread("data_as_of_july_25.csv")
+
+setnames(d, "Timestamp", "timestamp")
+setnames(d, "Name", "name")
+setnames(d, "Gender", "gender")
+setnames(d, "Age", "age")
+setnames(d, "Music Training", "music_training")
+setnames(d, "Pre-treatment Score", "pre_treatment_score")
+setnames(d, "Post-treatment Score", "post_treatment_score")
+setnames(d, "Treatment", "treatment")
+setnames(d, "Email", "email")
+setnames(d, "Time of Day", "time_of_day")
+d[ , score_difference := post_treatment_score - pre_treatment_score]
+
+```
+
+```{r}
+d
+```
+
+```{r}
+model_post_treatment_score <- lm(post_treatment_score ~ treatment, data = d)
+model_score_difference <- lm(score_difference ~ treatment, data = d)
+
+summary(model_post_treatment_score)
+summary(model_score_difference)
+```
+
+
+```{r}
+## Time of Day
+# post-treatment score only
+model_score_post_score_tod <- lm(post_treatment_score ~ treatment + time_of_day + treatment*time_of_day, data = d)
+summary(model_score_post_score_tod)
+
+```
+
+```{r}
+
+
+# difference in scores
+model_score_difference_tod <- lm(score_difference ~ treatment + time_of_day + treatment*time_of_day, data = d)
+summary(model_score_difference_tod)
+```
+
+```{r}
+
+
+# difference in scores
+model_score_difference_tod2 <- lm(score_difference ~ treatment + time_of_day , data = d)
+summary(model_score_difference_tod2)
+```
+
+```{r}
+
+
+# difference in scores
+model_score_difference_tod3 <- lm(score_difference ~ treatment + time_of_day + age + treatment*time_of_day, data = d)
+summary(model_score_difference_tod3)
+```
+
+
+```{r}
+
+
+# difference in scores
+model_score_difference_tod4 <- lm(score_difference ~ treatment + time_of_day + age + treatment*time_of_day + treatment*age, data = d)
+summary(model_score_difference_tod4)
+```
+
+```{r}
+
+
+# difference in scores
+model_score_difference_tod5 <- lm(score_difference ~ treatment + time_of_day + music_training + treatment*time_of_day, data = d)
+summary(model_score_difference_tod5)
+```
+
+
+
